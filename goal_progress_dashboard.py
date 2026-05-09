@@ -552,7 +552,7 @@ def render_google_sheets_diagnostics() -> None:
         if svc:
             st.write(f"Service account email: `{dict(svc).get('client_email', 'Not found')}`")
 
-        if st.button("Test Google Sheets connection", use_container_width=True):
+        if st.button("Test Google Sheets connection", width='stretch'):
             try:
                 workbook = get_gspread_workbook()
                 worksheet_titles = [ws.title for ws in workbook.worksheets()]
@@ -570,7 +570,7 @@ def check_password() -> bool:
     if st.session_state.get("goal_tracker_authenticated"):
         with st.sidebar:
             st.success("Authenticated")
-            if st.button("Log out", use_container_width=True):
+            if st.button("Log out", width='stretch'):
                 st.session_state["goal_tracker_authenticated"] = False
                 st.rerun()
         return True
@@ -1178,7 +1178,7 @@ def quick_log_form(goals: pd.DataFrame, logs: pd.DataFrame, location: str = "mai
         hours_spent = c2.number_input("Hours", min_value=0.0, max_value=24.0, value=1.0, step=0.25, key=f"quick_hours_{location}")
         leverage_type = c3.selectbox("Leverage type", LEVERAGE_TYPE_OPTIONS, index=0, key=f"quick_lev_{location}")
         achievement = st.text_input("What did you achieve?", placeholder="Example: Added Google Sheets writeback and tested logging")
-        submitted = st.form_submit_button("Save Quick Log", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Save Quick Log", type="primary", width='stretch')
 
     if submitted:
         new_row = create_log_row(
@@ -1205,7 +1205,7 @@ def quick_log_form(goals: pd.DataFrame, logs: pd.DataFrame, location: str = "mai
             merged = logs_with_goal_info(goals, logs).dropna(subset=["log_date"]).sort_values("log_date", ascending=False)
             last = merged.iloc[0]
             st.caption(f"Last log: {last.get('title', 'Unknown')} | {last['hours_spent']}h | {last.get('leverage_type', '')}")
-            if st.button("Duplicate last log for today", use_container_width=True, key=f"dup_last_{location}"):
+            if st.button("Duplicate last log for today", width='stretch', key=f"dup_last_{location}"):
                 new_row = create_log_row(
                     goal_id=last["goal_id"],
                     log_date=date.today(),
@@ -1354,14 +1354,14 @@ def manage_goal_status(goals: pd.DataFrame) -> None:
     current_status = str(row.get("status", "Active"))
     new_status = c1.selectbox("New Status", STATUS_OPTIONS, index=STATUS_OPTIONS.index(current_status) if current_status in STATUS_OPTIONS else 0)
 
-    if c2.button("Update Status", type="primary", use_container_width=True):
+    if c2.button("Update Status", type="primary", width='stretch'):
         updated = goals.copy()
         updated.loc[updated["goal_id"] == selected_id, "status"] = new_status
         updated.loc[updated["goal_id"] == selected_id, "updated_at"] = now_ts()
         write_table("goals", updated, GOALS_COLUMNS)
         clear_and_rerun(f"Status updated to {new_status}.")
 
-    if c3.button("Archive Selected", use_container_width=True):
+    if c3.button("Archive Selected", width='stretch'):
         updated = goals.copy()
         updated.loc[updated["goal_id"] == selected_id, "status"] = "Archived"
         updated.loc[updated["goal_id"] == selected_id, "updated_at"] = now_ts()
@@ -1449,7 +1449,7 @@ def weekly_command_center(goals: pd.DataFrame, logs: pd.DataFrame, enriched: pd.
         gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#2563eb"}},
     ))
     fig.update_layout(height=260, margin=dict(l=20, r=20, t=40, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def priority_vs_effort_chart(goals: pd.DataFrame, logs: pd.DataFrame, filters: Dict) -> None:
@@ -1476,11 +1476,11 @@ def priority_vs_effort_chart(goals: pd.DataFrame, logs: pd.DataFrame, filters: D
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
     fig.update_layout(height=460, xaxis_tickangle=-25, yaxis_title="Share of Effort / Priority")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     gap_view = data.sort_values("Gap %")[["Category", "Priority Weight %", "Actual Effort %", "hours_spent", "Gap %"]]
     gap_view = gap_view.rename(columns={"hours_spent": "Hours Logged"})
-    st.dataframe(gap_view, use_container_width=True, hide_index=True)
+    st.dataframe(gap_view, width='stretch', hide_index=True)
 
 
 def overview_charts(goals: pd.DataFrame, logs: pd.DataFrame, filtered_goals: pd.DataFrame, filters: Dict) -> None:
@@ -1497,25 +1497,25 @@ def overview_charts(goals: pd.DataFrame, logs: pd.DataFrame, filtered_goals: pd.
     by_goal = merged.groupby("title", as_index=False)["hours_spent"].sum().sort_values("hours_spent", ascending=False)
     fig_goal = px.bar(by_goal, x="hours_spent", y="title", orientation="h", title="Hours by Goal / Habit")
     fig_goal.update_layout(yaxis={"categoryorder": "total ascending"}, height=420)
-    c1.plotly_chart(fig_goal, use_container_width=True)
+    c1.plotly_chart(fig_goal, width='stretch')
 
     by_lev = merged.groupby("leverage_type", as_index=False)["hours_spent"].sum().sort_values("hours_spent", ascending=False)
     fig_lev = px.bar(by_lev, x="hours_spent", y="leverage_type", orientation="h", title="Hours by Leverage Type")
     fig_lev.update_layout(yaxis={"categoryorder": "total ascending"}, height=420)
-    c2.plotly_chart(fig_lev, use_container_width=True)
+    c2.plotly_chart(fig_lev, width='stretch')
 
     c3, c4 = st.columns(2)
     by_cat = merged.groupby("category", as_index=False)["hours_spent"].sum().sort_values("hours_spent", ascending=False)
     fig_cat = px.pie(by_cat, names="category", values="hours_spent", title="Effort by Category")
     fig_cat.update_layout(height=420)
-    c3.plotly_chart(fig_cat, use_container_width=True)
+    c3.plotly_chart(fig_cat, width='stretch')
 
     logs_trend = merged.copy()
     logs_trend["week_start"] = logs_trend["log_date"].dt.to_period("W").apply(lambda r: r.start_time)
     weekly = logs_trend.groupby("week_start", as_index=False)["hours_spent"].sum()
     fig_week = px.line(weekly, x="week_start", y="hours_spent", markers=True, title="Weekly Progress Trend")
     fig_week.update_layout(height=420, xaxis_title="Week", yaxis_title="Hours")
-    c4.plotly_chart(fig_week, use_container_width=True)
+    c4.plotly_chart(fig_week, width='stretch')
 
     score, score_df = calculate_execution_score(goals, logs)
     fig_score = px.bar(
@@ -1526,7 +1526,7 @@ def overview_charts(goals: pd.DataFrame, logs: pd.DataFrame, filtered_goals: pd.
         title=f"Weekly Execution Score Breakdown: {score}/100",
     )
     fig_score.update_layout(height=420, xaxis_tickangle=-25)
-    st.plotly_chart(fig_score, use_container_width=True)
+    st.plotly_chart(fig_score, width='stretch')
 
 
 def goal_table_section(enriched: pd.DataFrame, filtered_goals: pd.DataFrame) -> None:
@@ -1559,7 +1559,7 @@ def goal_table_section(enriched: pd.DataFrame, filtered_goals: pd.DataFrame) -> 
         "success_definition": "Success Definition",
         "target_date": "Target Date",
     })
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.dataframe(table, width='stretch', hide_index=True)
 
 
 def goal_detail_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.DataFrame) -> None:
@@ -1591,21 +1591,21 @@ def goal_detail_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.
         sub_logs = sub_logs.sort_values("log_date")
         sub_logs["cumulative_hours"] = sub_logs["hours_spent"].cumsum()
         fig = px.line(sub_logs, x="log_date", y="cumulative_hours", markers=True, title="Cumulative Hours Over Time")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         by_lev = sub_logs.groupby("leverage_type", as_index=False)["hours_spent"].sum().sort_values("hours_spent", ascending=False)
         fig_lev = px.bar(by_lev, x="hours_spent", y="leverage_type", orientation="h", title="Leverage Type Mix for Selected Goal")
-        st.plotly_chart(fig_lev, use_container_width=True)
+        st.plotly_chart(fig_lev, width='stretch')
 
         diary = sub_logs[["log_date", "hours_spent", "leverage_type", "achievement", "progress_note", "difficulty", "energy_level", "mood"]].sort_values("log_date", ascending=False)
-        st.dataframe(diary, use_container_width=True, hide_index=True)
+        st.dataframe(diary, width='stretch', hide_index=True)
 
     sub_miles = milestones[milestones["goal_id"] == selected_id].copy()
     if not sub_miles.empty:
         st.markdown("#### Milestones")
         st.dataframe(
             sub_miles[["milestone_date", "milestone_title", "milestone_description", "impact_score"]].sort_values("milestone_date", ascending=False),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
 
@@ -1623,7 +1623,7 @@ def diary_section(goals: pd.DataFrame, logs: pd.DataFrame, filters: Dict) -> Non
         "achievement", "progress_note", "difficulty", "energy_level", "mood",
     ]].sort_values("log_date", ascending=False)
     diary = diary.rename(columns={"title": "Goal / Habit", "category": "Category", "leverage_type": "Leverage Type"})
-    st.dataframe(diary, use_container_width=True, hide_index=True)
+    st.dataframe(diary, width='stretch', hide_index=True)
 
 
 def insights_section(enriched: pd.DataFrame, goals: pd.DataFrame, logs: pd.DataFrame) -> None:
@@ -1673,7 +1673,7 @@ def target_vs_actual_by_goal_section(enriched: pd.DataFrame, logs: pd.DataFrame)
     data = pd.DataFrame(rows).sort_values(["Priority", "Achievement %"], ascending=[True, True])
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.dataframe(data, use_container_width=True, hide_index=True)
+        st.dataframe(data, width='stretch', hide_index=True)
     with c2:
         chart_df = data[data["Weekly Target Hours"] > 0].copy()
         if not chart_df.empty:
@@ -1685,7 +1685,7 @@ def target_vs_actual_by_goal_section(enriched: pd.DataFrame, logs: pd.DataFrame)
             )
             fig = px.bar(long_df, x="Goal / Habit", y="Hours", color="Measure", barmode="group", title="Weekly Target vs Actual")
             fig.update_layout(height=430, xaxis_tickangle=-35)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 
 def weekly_reflection_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_reflections: pd.DataFrame) -> None:
@@ -1778,7 +1778,7 @@ def weekly_reflection_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_re
         table = weekly_reflections.sort_values("week_start", ascending=False)[[
             "week_start", "focus_score", "what_i_built", "what_created_leverage", "what_distracted_me", "what_to_stop_doing", "next_best_action"
         ]]
-        st.dataframe(table, use_container_width=True, hide_index=True)
+        st.dataframe(table, width='stretch', hide_index=True)
 
 def monthly_review_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_reflections: pd.DataFrame, monthly_reviews: pd.DataFrame) -> None:
     st.subheader("📅 Monthly Review")
@@ -1883,7 +1883,7 @@ def monthly_review_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_refle
                 "month_start", "top_achievements", "best_leverage_activity", "biggest_distraction",
                 "most_neglected_area", "what_to_double_down", "what_to_stop", "next_month_focus"
             ]],
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
 
@@ -1951,7 +1951,7 @@ def edit_delete_log_section(goals: pd.DataFrame, logs: pd.DataFrame) -> None:
             write_table("logs", updated, LOGS_COLUMNS)
             clear_and_rerun("Log updated successfully.")
 
-    if st.button("Delete Selected Log", type="secondary", use_container_width=True):
+    if st.button("Delete Selected Log", type="secondary", width='stretch'):
         updated = logs[logs["log_id"] != selected_log_id].copy()
         write_table("logs", updated, LOGS_COLUMNS)
         clear_and_rerun("Log deleted successfully.")
@@ -1965,7 +1965,7 @@ def roadmap_section() -> None:
         {"Year": "2029", "Theme": "Scale Optionality", "Main Output": "Meaningful consulting/tool income, known for industrial AI and operational transformation"},
         {"Year": "2030", "Theme": "Freedom Through Leverage", "Main Output": "Selective work, stronger assets, system income, health and family stability"},
     ])
-    st.dataframe(roadmap, use_container_width=True, hide_index=True)
+    st.dataframe(roadmap, width='stretch', hide_index=True)
 
 
 def export_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.DataFrame, weekly_reflections: pd.DataFrame, monthly_reviews: pd.DataFrame) -> None:
@@ -1993,8 +1993,17 @@ def main() -> None:
     filters = sidebar_filters(enriched)
     filtered_goals = apply_goal_filters(enriched, filters)
 
-    st.title("🎯 Personal Goal Progress Dashboard")
-    st.caption("Your personal command center for tracking effort, leverage, consistency, and achievement.")
+    top_col1, top_col2 = st.columns([4, 1])
+
+    with top_col1:
+        st.title("🎯 Personal Goal Progress Dashboard")
+        st.caption("Your personal command center for tracking effort, leverage, consistency, and achievement.")
+
+    with top_col2:
+        st.markdown("<div style='height: 2.2rem;'></div>", unsafe_allow_html=True)
+        sheet_url = get_spreadsheet_url()
+        if sheet_url:
+            st.link_button("📄 Google Sheet", sheet_url, width='stretch')
 
     metric_row(enriched, logs)
 
