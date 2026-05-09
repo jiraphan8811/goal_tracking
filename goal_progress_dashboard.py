@@ -1,7 +1,18 @@
 """
-Personal Goal Progress Dashboard — Version 2.3
+Personal Goal Progress Dashboard — Version 2.5
 ------------------------------------------------
 A Streamlit goal, habit, progress diary, and execution-score dashboard.
+
+Version 2.5 upgrades:
+- Weekly/Monthly Review forms can optionally auto-create a Reflection habit log
+- Auto-detects existing Weekly Strategic Reflection habit and reuses it
+
+Version 2.4 upgrades:
+- Weekly Reflection form and review table
+- Monthly Review form and summary page
+- Target vs Actual by Goal
+- Edit/Delete Log controls
+- Better goal setup fields: weekly target hours, success definition, review frequency, and role/context
 
 Version 2.3 upgrades:
 - Show goal/habit descriptions in goal table, goal detail, quick log, and status management views
@@ -60,10 +71,13 @@ DATA_DIR.mkdir(exist_ok=True)
 GOALS_FILE = DATA_DIR / "goals.csv"
 LOGS_FILE = DATA_DIR / "logs.csv"
 MILESTONES_FILE = DATA_DIR / "milestones.csv"
+WEEKLY_REFLECTIONS_FILE = DATA_DIR / "weekly_reflections.csv"
+MONTHLY_REVIEWS_FILE = DATA_DIR / "monthly_reviews.csv"
 
 GOALS_COLUMNS = [
     "goal_id", "type", "title", "category", "description", "status", "priority",
-    "target_value", "target_unit", "start_date", "target_date", "created_at", "updated_at",
+    "target_value", "target_unit", "weekly_target_hours", "success_definition", "review_frequency", "role_context",
+    "start_date", "target_date", "created_at", "updated_at",
 ]
 
 LOGS_COLUMNS = [
@@ -74,6 +88,18 @@ LOGS_COLUMNS = [
 MILESTONES_COLUMNS = [
     "milestone_id", "goal_id", "milestone_date", "milestone_title",
     "milestone_description", "impact_score", "created_at",
+]
+
+WEEKLY_REFLECTIONS_COLUMNS = [
+    "reflection_id", "week_start", "what_i_built", "what_created_leverage",
+    "what_distracted_me", "what_to_stop_doing", "next_best_action",
+    "focus_score", "created_at",
+]
+
+MONTHLY_REVIEWS_COLUMNS = [
+    "review_id", "month_start", "top_achievements", "best_leverage_activity",
+    "biggest_distraction", "most_neglected_area", "what_to_double_down",
+    "what_to_stop", "next_month_focus", "created_at",
 ]
 
 CATEGORY_OPTIONS = [
@@ -240,6 +266,10 @@ def seed_data_if_missing() -> None:
             "priority": "High",
             "target_value": 300,
             "target_unit": "Hours",
+            "weekly_target_hours": 6.0,
+            "success_definition": "One serious operational tool or dashboard that creates real leverage.",
+            "review_frequency": "Weekly",
+            "role_context": "Builder / Client Zero",
             "start_date": str(today.replace(month=1, day=1)),
             "target_date": str(today.replace(month=12, day=31)),
             "created_at": now_ts(),
@@ -255,6 +285,10 @@ def seed_data_if_missing() -> None:
             "priority": "High",
             "target_value": 150,
             "target_unit": "Hours",
+            "weekly_target_hours": 2.5,
+            "success_definition": "Practical AI and automation capability applied to real tools.",
+            "review_frequency": "Weekly",
+            "role_context": "Capability development",
             "start_date": str(today.replace(month=1, day=1)),
             "target_date": str(today.replace(month=12, day=31)),
             "created_at": now_ts(),
@@ -270,6 +304,10 @@ def seed_data_if_missing() -> None:
             "priority": "High",
             "target_value": 156,
             "target_unit": "Sessions",
+            "weekly_target_hours": 3.0,
+            "success_definition": "Stable health, energy, walking/running, sleep, and recovery rhythm.",
+            "review_frequency": "Weekly",
+            "role_context": "Health foundation",
             "start_date": str(today.replace(month=1, day=1)),
             "target_date": str(today.replace(month=12, day=31)),
             "created_at": now_ts(),
@@ -285,6 +323,10 @@ def seed_data_if_missing() -> None:
             "priority": "High",
             "target_value": 26,
             "target_unit": "Hours",
+            "weekly_target_hours": 0.5,
+            "success_definition": "A weekly decision on what to focus on, stop, and build next.",
+            "review_frequency": "Weekly",
+            "role_context": "Strategic review",
             "start_date": str(today.replace(month=1, day=1)),
             "target_date": str(today.replace(month=12, day=31)),
             "created_at": now_ts(),
@@ -294,6 +336,8 @@ def seed_data_if_missing() -> None:
     ensure_csv(GOALS_FILE, GOALS_COLUMNS, seed_goals)
     ensure_csv(LOGS_FILE, LOGS_COLUMNS, [])
     ensure_csv(MILESTONES_FILE, MILESTONES_COLUMNS, [])
+    ensure_csv(WEEKLY_REFLECTIONS_FILE, WEEKLY_REFLECTIONS_COLUMNS, [])
+    ensure_csv(MONTHLY_REVIEWS_FILE, MONTHLY_REVIEWS_COLUMNS, [])
 
 
 def coerce_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
@@ -465,21 +509,29 @@ def write_table(name: str, df: pd.DataFrame, columns: List[str]) -> None:
 
 
 @st.cache_data(ttl=10)
-def load_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     goals = read_table("goals", GOALS_COLUMNS)
     logs = read_table("logs", LOGS_COLUMNS)
     milestones = read_table("milestones", MILESTONES_COLUMNS)
+    weekly_reflections = read_table("weekly_reflections", WEEKLY_REFLECTIONS_COLUMNS)
+    monthly_reviews = read_table("monthly_reviews", MONTHLY_REVIEWS_COLUMNS)
 
-    goals = coerce_numeric(goals, ["target_value"])
+    goals = coerce_numeric(goals, ["target_value", "weekly_target_hours"])
     goals = parse_dates(goals, ["start_date", "target_date", "created_at", "updated_at"])
 
     logs = coerce_numeric(logs, ["hours_spent", "quantity"])
     logs = parse_dates(logs, ["log_date", "created_at"])
-    logs["leverage_type"] = logs.get("leverage_type", "").replace("", "Maintenance Only")
+    logs["leverage_type"] = logs.get("leverage_type", "").replace("", "Maintenance / Admin")
+    logs["leverage_type"] = logs["leverage_type"].replace("Maintenance Only", "Maintenance / Admin")
 
     milestones = coerce_numeric(milestones, ["impact_score"])
     milestones = parse_dates(milestones, ["milestone_date", "created_at"])
-    return goals, logs, milestones
+
+    weekly_reflections = coerce_numeric(weekly_reflections, ["focus_score"])
+    weekly_reflections = parse_dates(weekly_reflections, ["week_start", "created_at"])
+
+    monthly_reviews = parse_dates(monthly_reviews, ["month_start", "created_at"])
+    return goals, logs, milestones, weekly_reflections, monthly_reviews
 
 
 def clear_and_rerun(message: str):
@@ -967,6 +1019,122 @@ def goal_options_dict(goals: pd.DataFrame, active_only: bool = False) -> Dict[st
     return {f"{r['title']} — {r['category']}": r["goal_id"] for _, r in df.iterrows()}
 
 
+def reflection_habit_options(goals: pd.DataFrame, review_type: str = "weekly") -> Dict[str, str]:
+    """Return Reflection habit options, prioritising weekly/monthly review habits.
+
+    This lets the review form create a normal habit log without requiring duplicate manual entry.
+    """
+    if goals.empty:
+        return {}
+
+    df = goals.copy()
+    for col in ["type", "category", "status", "title"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    df["_title_l"] = df["title"].astype(str).str.lower()
+    df["_category_l"] = df["category"].astype(str).str.lower()
+    df["_type_l"] = df["type"].astype(str).str.lower()
+    df["_status_l"] = df["status"].astype(str).str.lower()
+
+    reflection = df[(df["_type_l"] == "habit") & (df["_category_l"] == "reflection")].copy()
+    if reflection.empty:
+        reflection = df[df["_category_l"] == "reflection"].copy()
+    if reflection.empty:
+        return {}
+
+    keyword = "monthly" if review_type == "monthly" else "weekly"
+    reflection["_sort"] = 50
+    reflection.loc[reflection["_status_l"] == "active", "_sort"] -= 20
+    reflection.loc[reflection["_title_l"].str.contains(keyword, na=False), "_sort"] -= 20
+    reflection.loc[reflection["_title_l"].str.contains("strategic", na=False), "_sort"] -= 5
+    reflection.loc[reflection["_title_l"].str.contains("reflection", na=False), "_sort"] -= 5
+    reflection = reflection.sort_values(["_sort", "title"])
+
+    return {f"{r['title']} — {r['category']}": r["goal_id"] for _, r in reflection.iterrows()}
+
+
+def build_review_habit_log_row(goal_id: str, log_date: date, hours_spent: float, review_type: str, summary: str) -> Dict:
+    review_label = "Monthly Review" if review_type == "monthly" else "Weekly Review"
+    return create_log_row(
+        goal_id=goal_id,
+        log_date=log_date,
+        hours_spent=hours_spent,
+        quantity=1,
+        quantity_unit="Review",
+        leverage_type="Reflect & Reprioritize",
+        progress_note=summary,
+        achievement=f"Completed {review_label}",
+        difficulty="Normal",
+        energy_level="Medium",
+        mood="Good",
+    )
+
+
+def has_review_habit_log_for_period(goals: pd.DataFrame, logs: pd.DataFrame, review_type: str, period_start: date) -> bool:
+    """Detect whether a review habit log already exists for the selected week/month."""
+    if logs.empty:
+        return False
+
+    options = set(reflection_habit_options(goals, review_type=review_type).values())
+    if not options:
+        return False
+
+    logs_valid = logs.dropna(subset=["log_date"]).copy()
+    if logs_valid.empty:
+        return False
+
+    logs_valid["log_day"] = logs_valid["log_date"].dt.date
+    logs_valid = logs_valid[logs_valid["goal_id"].isin(options)]
+
+    if review_type == "monthly":
+        return not logs_valid[
+            (logs_valid["log_day"] >= period_start)
+            & (logs_valid["log_day"] < (period_start + pd.DateOffset(months=1)).date())
+        ].empty
+
+    return not logs_valid[
+        (logs_valid["log_day"] >= period_start)
+        & (logs_valid["log_day"] <= period_start + timedelta(days=6))
+    ].empty
+
+
+def get_goal_weekly_target(goal_row: pd.Series) -> float:
+    """Use goal-level weekly target when available; otherwise fall back to category defaults."""
+    try:
+        target = float(goal_row.get("weekly_target_hours", 0) or 0)
+        if target > 0:
+            return target
+    except Exception:
+        pass
+    return float(WEEKLY_TARGET_HOURS.get(str(goal_row.get("category", "")), 0.0))
+
+
+def active_week_range() -> Tuple[date, date]:
+    today = date.today()
+    return week_start(today), today
+
+
+def current_month_range() -> Tuple[date, date]:
+    today = date.today()
+    return month_start(today), today
+
+
+def log_selector_labels(goals: pd.DataFrame, logs: pd.DataFrame) -> Dict[str, str]:
+    if logs.empty:
+        return {}
+    merged = logs_with_goal_info(goals, logs).copy()
+    merged = merged.dropna(subset=["log_date"]).sort_values("log_date", ascending=False)
+    labels = {}
+    for _, r in merged.head(200).iterrows():
+        log_id = str(r.get("log_id", ""))
+        if not log_id:
+            continue
+        label = f"{r['log_date'].date()} | {r.get('title', 'Unknown')} | {float(r.get('hours_spent', 0) or 0):.2f}h | {str(r.get('achievement', '') or '')[:45]}"
+        labels[label] = log_id
+    return labels
+
+
 # -----------------------------------------------------------------------------
 # Forms and actions
 # -----------------------------------------------------------------------------
@@ -1044,7 +1212,7 @@ def quick_log_form(goals: pd.DataFrame, logs: pd.DataFrame, location: str = "mai
                     hours_spent=float(last.get("hours_spent", 0) or 0),
                     quantity=float(last.get("quantity", 0) or 0),
                     quantity_unit=str(last.get("quantity_unit", "") or ""),
-                    leverage_type=str(last.get("leverage_type", "Maintenance Only") or "Maintenance Only"),
+                    leverage_type=str(last.get("leverage_type", "Maintenance / Admin") or "Maintenance / Admin"),
                     progress_note=str(last.get("progress_note", "") or ""),
                     achievement=str(last.get("achievement", "") or ""),
                     difficulty=str(last.get("difficulty", "Normal") or "Normal"),
@@ -1121,8 +1289,16 @@ def add_goal_form(goals: pd.DataFrame) -> None:
 
         c4, c5, c6 = st.columns(3)
         status = c4.selectbox("Status", STATUS_OPTIONS)
-        target_value = c5.number_input("Target Value", min_value=0.0, value=0.0, step=1.0)
+        target_value = c5.number_input("Total Target Value", min_value=0.0, value=0.0, step=1.0)
         target_unit = c6.text_input("Target Unit", value="Hours")
+
+        c9, c10, c11 = st.columns(3)
+        default_weekly_target = WEEKLY_TARGET_HOURS.get(category, 1.0)
+        weekly_target_hours = c9.number_input("Weekly Target Hours", min_value=0.0, value=float(default_weekly_target), step=0.25)
+        review_frequency = c10.selectbox("Review Frequency", ["Weekly", "Monthly", "Quarterly", "Ad hoc"], index=0)
+        role_context = c11.text_input("Role / Context", placeholder="Builder, leader, investor, health foundation, etc.")
+
+        success_definition = st.text_area("Success Definition", placeholder="What does success look like for this goal/habit?")
 
         c7, c8 = st.columns(2)
         start_date = c7.date_input("Start Date", value=date.today())
@@ -1143,6 +1319,10 @@ def add_goal_form(goals: pd.DataFrame) -> None:
             "priority": priority,
             "target_value": target_value,
             "target_unit": target_unit,
+            "weekly_target_hours": weekly_target_hours,
+            "success_definition": success_definition,
+            "review_frequency": review_frequency,
+            "role_context": role_context,
             "start_date": str(start_date),
             "target_date": str(target_date),
             "created_at": now_ts(),
@@ -1166,6 +1346,9 @@ def manage_goal_status(goals: pd.DataFrame) -> None:
     description = str(row.get("description", "") or "").strip()
     if description:
         st.markdown(f"<div class='section-card'><b>Description / Purpose</b><br>{description}</div>", unsafe_allow_html=True)
+    success_definition = str(row.get("success_definition", "") or "").strip()
+    if success_definition:
+        st.markdown(f"<div class='section-card'><b>Success Definition</b><br>{success_definition}</div>", unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1, 1, 1])
     current_status = str(row.get("status", "Active"))
@@ -1355,7 +1538,7 @@ def goal_table_section(enriched: pd.DataFrame, filtered_goals: pd.DataFrame) -> 
     view_cols = [
         "title", "description", "type", "category", "status", "priority", "hours_this_week",
         "hours_this_month", "hours_all_time", "last_logged_date", "days_since_last_log",
-        "total_logs", "progress_pct", "target_date",
+        "total_logs", "progress_pct", "weekly_target_hours", "success_definition", "target_date",
     ]
     table = filtered_goals[view_cols].copy()
     table = table.rename(columns={
@@ -1372,6 +1555,8 @@ def goal_table_section(enriched: pd.DataFrame, filtered_goals: pd.DataFrame) -> 
         "days_since_last_log": "Days Since Last Log",
         "total_logs": "Total Logs",
         "progress_pct": "Progress %",
+        "weekly_target_hours": "Weekly Target Hours",
+        "success_definition": "Success Definition",
         "target_date": "Target Date",
     })
     st.dataframe(table, use_container_width=True, hide_index=True)
@@ -1391,6 +1576,9 @@ def goal_detail_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.
     description = str(selected_goal.get("description", "") or "").strip()
     if description:
         st.markdown(f"<div class='section-card'><b>Description / Purpose</b><br>{description}</div>", unsafe_allow_html=True)
+    success_definition = str(selected_goal.get("success_definition", "") or "").strip()
+    if success_definition:
+        st.markdown(f"<div class='section-card'><b>Success Definition</b><br>{success_definition}</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Hours", f"{sub_logs['hours_spent'].sum():.1f}" if not sub_logs.empty else "0.0")
@@ -1444,6 +1632,330 @@ def insights_section(enriched: pd.DataFrame, goals: pd.DataFrame, logs: pd.DataF
         st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 
+
+
+def target_vs_actual_by_goal_section(enriched: pd.DataFrame, logs: pd.DataFrame) -> None:
+    st.subheader("🎯 Target vs Actual by Goal")
+    active = enriched[enriched["status"] == "Active"].copy() if not enriched.empty else pd.DataFrame()
+    if active.empty:
+        st.info("No active goals or habits to compare against targets.")
+        return
+
+    ws, today = active_week_range()
+    week_logs = period_logs(logs, ws, today)
+    rows = []
+    for _, r in active.iterrows():
+        goal_id = r["goal_id"]
+        actual = safe_sum_hours(week_logs[week_logs["goal_id"] == goal_id]) if not week_logs.empty else 0.0
+        target = get_goal_weekly_target(r)
+        achievement = actual / target * 100 if target > 0 else 0.0
+        if target <= 0:
+            status = "No Target"
+        elif achievement >= 100:
+            status = "On Track"
+        elif achievement >= 70:
+            status = "Slightly Behind"
+        elif achievement > 0:
+            status = "Behind"
+        else:
+            status = "No Progress"
+        rows.append({
+            "Goal / Habit": r.get("title", ""),
+            "Type": r.get("type", ""),
+            "Category": r.get("category", ""),
+            "Priority": r.get("priority", ""),
+            "Weekly Target Hours": target,
+            "Actual This Week": actual,
+            "Achievement %": min(achievement, 999),
+            "Status": status,
+        })
+
+    data = pd.DataFrame(rows).sort_values(["Priority", "Achievement %"], ascending=[True, True])
+    c1, c2 = st.columns([1.2, 1])
+    with c1:
+        st.dataframe(data, use_container_width=True, hide_index=True)
+    with c2:
+        chart_df = data[data["Weekly Target Hours"] > 0].copy()
+        if not chart_df.empty:
+            long_df = chart_df.melt(
+                id_vars=["Goal / Habit", "Category", "Status"],
+                value_vars=["Weekly Target Hours", "Actual This Week"],
+                var_name="Measure",
+                value_name="Hours",
+            )
+            fig = px.bar(long_df, x="Goal / Habit", y="Hours", color="Measure", barmode="group", title="Weekly Target vs Actual")
+            fig.update_layout(height=430, xaxis_tickangle=-35)
+            st.plotly_chart(fig, use_container_width=True)
+
+
+def weekly_reflection_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_reflections: pd.DataFrame) -> None:
+    st.subheader("🪞 Weekly Reflection")
+    this_week_start = week_start(date.today())
+    existing = weekly_reflections.dropna(subset=["week_start"]).copy() if not weekly_reflections.empty else pd.DataFrame(columns=WEEKLY_REFLECTIONS_COLUMNS)
+    if not existing.empty:
+        existing["week_day"] = existing["week_start"].dt.date
+    already_done = not existing[existing["week_day"] == this_week_start].empty if not existing.empty and "week_day" in existing.columns else False
+
+    if already_done:
+        st.markdown("<div class='success-box'><b>This week's reflection is already recorded.</b> You can still add another note if you want to capture a new decision.</div>", unsafe_allow_html=True)
+
+    reflection_options = reflection_habit_options(goals, review_type="weekly")
+    already_logged_habit = has_review_habit_log_for_period(goals, logs, "weekly", this_week_start)
+
+    with st.form("weekly_reflection_form", clear_on_submit=True):
+        c1, c2 = st.columns([1, 1])
+        reflection_week = c1.date_input("Week Start", value=this_week_start)
+        focus_score = c2.slider("Focus Score", min_value=1, max_value=10, value=7, help="How focused was this week against your roadmap?")
+        what_i_built = st.text_area("What did I build this week?", placeholder="Tools, dashboards, processes, documents, assets, systems...")
+        what_created_leverage = st.text_area("What created leverage?", placeholder="What will keep paying back later?")
+        what_distracted_me = st.text_area("What distracted me?", placeholder="Low-value work, context switching, unnecessary polishing...")
+        what_to_stop_doing = st.text_area("What should I stop doing?", placeholder="Be honest. What is consuming effort without building future advantage?")
+        nba = st.text_area("Next most important action", placeholder="One action that matters most next week")
+
+        st.markdown("#### Habit log link")
+        if reflection_options:
+            selected_reflection_habit = st.selectbox(
+                "Reflection habit to log against",
+                list(reflection_options.keys()),
+                help="This reuses your existing Reflection habit, for example Weekly Strategic Reflection — Reflection.",
+            )
+            auto_log_habit = st.checkbox(
+                "Also create a habit log for this weekly review",
+                value=not already_logged_habit,
+                help="Tick this if you want this review to count toward Reflection hours, habit consistency, and the weekly execution score.",
+            )
+            if already_logged_habit:
+                st.caption("A Reflection habit log already appears to exist for this week. Untick this box to avoid double logging.")
+            habit_hours = st.number_input("Habit log hours", min_value=0.0, max_value=8.0, value=0.5, step=0.25)
+        else:
+            selected_reflection_habit = None
+            auto_log_habit = False
+            habit_hours = 0.0
+            st.warning("No Reflection habit was found. Create a Habit in the Reflection category first, such as 'Weekly Strategic Reflection'.")
+
+        submitted = st.form_submit_button("Save Weekly Reflection", type="primary")
+
+    if submitted:
+        new_row = {
+            "reflection_id": new_id("refl"),
+            "week_start": str(reflection_week),
+            "what_i_built": what_i_built,
+            "what_created_leverage": what_created_leverage,
+            "what_distracted_me": what_distracted_me,
+            "what_to_stop_doing": what_to_stop_doing,
+            "next_best_action": nba,
+            "focus_score": focus_score,
+            "created_at": now_ts(),
+        }
+        updated_reflections = pd.concat([weekly_reflections, pd.DataFrame([new_row])], ignore_index=True)
+        write_table("weekly_reflections", updated_reflections, WEEKLY_REFLECTIONS_COLUMNS)
+
+        if auto_log_habit and selected_reflection_habit:
+            summary = (
+                f"What I built: {what_i_built}\n\n"
+                f"Created leverage: {what_created_leverage}\n\n"
+                f"Distraction: {what_distracted_me}\n\n"
+                f"Stop doing: {what_to_stop_doing}\n\n"
+                f"Next action: {nba}"
+            ).strip()
+            log_row = build_review_habit_log_row(
+                goal_id=reflection_options[selected_reflection_habit],
+                log_date=reflection_week,
+                hours_spent=float(habit_hours or 0),
+                review_type="weekly",
+                summary=summary,
+            )
+            updated_logs = pd.concat([logs, pd.DataFrame([log_row])], ignore_index=True)
+            write_table("logs", updated_logs, LOGS_COLUMNS)
+            clear_and_rerun("Weekly reflection saved and Reflection habit log created.")
+
+        clear_and_rerun("Weekly reflection saved successfully.")
+
+    st.markdown("#### Reflection History")
+    if weekly_reflections.empty:
+        st.info("No weekly reflections yet.")
+    else:
+        table = weekly_reflections.sort_values("week_start", ascending=False)[[
+            "week_start", "focus_score", "what_i_built", "what_created_leverage", "what_distracted_me", "what_to_stop_doing", "next_best_action"
+        ]]
+        st.dataframe(table, use_container_width=True, hide_index=True)
+
+def monthly_review_section(goals: pd.DataFrame, logs: pd.DataFrame, weekly_reflections: pd.DataFrame, monthly_reviews: pd.DataFrame) -> None:
+    st.subheader("📅 Monthly Review")
+    ms, today = current_month_range()
+    month_logs = period_logs(logs, ms, today)
+    merged = logs_with_goal_info(goals, month_logs) if not month_logs.empty else pd.DataFrame()
+
+    total_hours = safe_sum_hours(month_logs)
+    high_lev_hours = safe_sum_hours(month_logs[month_logs["leverage_type"].isin(HIGH_LEVERAGE_TYPES)]) if not month_logs.empty and "leverage_type" in month_logs.columns else 0.0
+    high_lev_pct = high_lev_hours / total_hours if total_hours > 0 else 0
+    top_category = top_item_label(merged, "category") if not merged.empty else "No activity yet"
+    top_goal = top_item_label(merged, "title") if not merged.empty else "No activity yet"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Month Hours", f"{total_hours:.1f} h")
+    c2.metric("High-Leverage Share", f"{high_lev_pct:.0%}", f"{high_lev_hours:.1f} h")
+    c3.metric("Top Category", top_category)
+    c4.metric("Top Goal", top_goal)
+
+    reflection_options = reflection_habit_options(goals, review_type="monthly")
+    already_logged_habit = has_review_habit_log_for_period(goals, logs, "monthly", ms)
+
+    with st.form("monthly_review_form", clear_on_submit=True):
+        review_month = st.date_input("Month Start", value=ms)
+        top_achievements = st.text_area("Top achievements", placeholder="What actually moved your life/career/business forward this month?")
+        best_leverage_activity = st.text_area("Best leverage activity", placeholder="Which activity created the most future advantage?")
+        biggest_distraction = st.text_area("Biggest distraction", placeholder="What consumed effort without enough value?")
+        most_neglected_area = st.text_input("Most neglected area", placeholder="Example: Wealth, Health, Client Zero...")
+        what_to_double_down = st.text_area("What to double down on next month")
+        what_to_stop = st.text_area("What to stop doing")
+        next_month_focus = st.text_area("Next month focus", placeholder="1-3 focus areas only")
+
+        st.markdown("#### Habit log link")
+        if reflection_options:
+            selected_reflection_habit = st.selectbox(
+                "Reflection habit to log against",
+                list(reflection_options.keys()),
+                help="If you do not have a Monthly Strategic Review habit, this can reuse your existing Weekly Strategic Reflection habit.",
+            )
+            auto_log_habit = st.checkbox(
+                "Also create a habit log for this monthly review",
+                value=not already_logged_habit,
+                help="Tick this if you want this review to count toward Reflection hours and habit consistency.",
+            )
+            if already_logged_habit:
+                st.caption("A Reflection habit log already appears to exist for this month. Untick this box to avoid double logging.")
+            habit_hours = st.number_input("Habit log hours", min_value=0.0, max_value=8.0, value=1.0, step=0.25)
+        else:
+            selected_reflection_habit = None
+            auto_log_habit = False
+            habit_hours = 0.0
+            st.warning("No Reflection habit was found. Create a Habit in the Reflection category first, such as 'Weekly Strategic Reflection'.")
+
+        submitted = st.form_submit_button("Save Monthly Review", type="primary")
+
+    if submitted:
+        review_month_start = review_month.replace(day=1)
+        new_row = {
+            "review_id": new_id("mrev"),
+            "month_start": str(review_month_start),
+            "top_achievements": top_achievements,
+            "best_leverage_activity": best_leverage_activity,
+            "biggest_distraction": biggest_distraction,
+            "most_neglected_area": most_neglected_area,
+            "what_to_double_down": what_to_double_down,
+            "what_to_stop": what_to_stop,
+            "next_month_focus": next_month_focus,
+            "created_at": now_ts(),
+        }
+        updated_reviews = pd.concat([monthly_reviews, pd.DataFrame([new_row])], ignore_index=True)
+        write_table("monthly_reviews", updated_reviews, MONTHLY_REVIEWS_COLUMNS)
+
+        if auto_log_habit and selected_reflection_habit:
+            summary = (
+                f"Top achievements: {top_achievements}\n\n"
+                f"Best leverage activity: {best_leverage_activity}\n\n"
+                f"Biggest distraction: {biggest_distraction}\n\n"
+                f"Most neglected area: {most_neglected_area}\n\n"
+                f"Double down: {what_to_double_down}\n\n"
+                f"Stop: {what_to_stop}\n\n"
+                f"Next month focus: {next_month_focus}"
+            ).strip()
+            log_row = build_review_habit_log_row(
+                goal_id=reflection_options[selected_reflection_habit],
+                log_date=review_month_start,
+                hours_spent=float(habit_hours or 0),
+                review_type="monthly",
+                summary=summary,
+            )
+            updated_logs = pd.concat([logs, pd.DataFrame([log_row])], ignore_index=True)
+            write_table("logs", updated_logs, LOGS_COLUMNS)
+            clear_and_rerun("Monthly review saved and Reflection habit log created.")
+
+        clear_and_rerun("Monthly review saved successfully.")
+
+    st.markdown("#### Monthly Review History")
+    if monthly_reviews.empty:
+        st.info("No monthly reviews yet.")
+    else:
+        st.dataframe(
+            monthly_reviews.sort_values("month_start", ascending=False)[[
+                "month_start", "top_achievements", "best_leverage_activity", "biggest_distraction",
+                "most_neglected_area", "what_to_double_down", "what_to_stop", "next_month_focus"
+            ]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+def edit_delete_log_section(goals: pd.DataFrame, logs: pd.DataFrame) -> None:
+    st.subheader("✏️ Edit / Delete Log")
+    if logs.empty:
+        st.info("No logs to edit yet.")
+        return
+
+    labels = log_selector_labels(goals, logs)
+    if not labels:
+        st.info("No valid logs found.")
+        return
+
+    selected_label = st.selectbox("Select a recent log", list(labels.keys()))
+    selected_log_id = labels[selected_label]
+    row_df = logs[logs["log_id"] == selected_log_id]
+    if row_df.empty:
+        st.warning("Selected log could not be found.")
+        return
+    row = row_df.iloc[0]
+
+    goal_options = goal_options_dict(goals, active_only=False)
+    goal_id_to_label = {v: k for k, v in goal_options.items()}
+    current_goal_label = goal_id_to_label.get(row.get("goal_id"), list(goal_options.keys())[0] if goal_options else "")
+
+    with st.form("edit_log_form"):
+        c1, c2, c3 = st.columns([2, 1, 1])
+        goal_label = c1.selectbox("Goal / Habit", list(goal_options.keys()), index=list(goal_options.keys()).index(current_goal_label) if current_goal_label in goal_options else 0)
+        log_date_value = safe_to_date(row.get("log_date")) or date.today()
+        new_log_date = c2.date_input("Log Date", value=log_date_value)
+        hours = c3.number_input("Hours", min_value=0.0, max_value=24.0, value=float(row.get("hours_spent", 0) or 0), step=0.25)
+
+        c4, c5, c6, c7 = st.columns(4)
+        leverage_current = str(row.get("leverage_type", "Maintenance / Admin") or "Maintenance / Admin")
+        leverage_index = LEVERAGE_TYPE_OPTIONS.index(leverage_current) if leverage_current in LEVERAGE_TYPE_OPTIONS else 0
+        leverage_type = c4.selectbox("Leverage Type", LEVERAGE_TYPE_OPTIONS, index=leverage_index)
+        difficulty = c5.selectbox("Difficulty", DIFFICULTY_OPTIONS, index=DIFFICULTY_OPTIONS.index(str(row.get("difficulty", "Normal"))) if str(row.get("difficulty", "Normal")) in DIFFICULTY_OPTIONS else 1)
+        energy = c6.selectbox("Energy", ENERGY_OPTIONS, index=ENERGY_OPTIONS.index(str(row.get("energy_level", "Medium"))) if str(row.get("energy_level", "Medium")) in ENERGY_OPTIONS else 1)
+        mood = c7.selectbox("Mood", MOOD_OPTIONS, index=MOOD_OPTIONS.index(str(row.get("mood", "Good"))) if str(row.get("mood", "Good")) in MOOD_OPTIONS else 2)
+
+        c8, c9 = st.columns(2)
+        quantity = c8.number_input("Quantity", min_value=0.0, value=float(row.get("quantity", 0) or 0), step=1.0)
+        quantity_unit = c9.text_input("Quantity Unit", value=str(row.get("quantity_unit", "") or ""))
+        achievement = st.text_input("Achievement", value=str(row.get("achievement", "") or ""))
+        progress_note = st.text_area("Progress Note", value=str(row.get("progress_note", "") or ""))
+        save = st.form_submit_button("Save Log Changes", type="primary")
+
+    if save:
+        updated = logs.copy()
+        idx = updated.index[updated["log_id"] == selected_log_id]
+        if len(idx) > 0:
+            i = idx[0]
+            updated.loc[i, "goal_id"] = goal_options[goal_label]
+            updated.loc[i, "log_date"] = str(new_log_date)
+            updated.loc[i, "hours_spent"] = hours
+            updated.loc[i, "quantity"] = quantity
+            updated.loc[i, "quantity_unit"] = quantity_unit
+            updated.loc[i, "leverage_type"] = leverage_type
+            updated.loc[i, "achievement"] = achievement
+            updated.loc[i, "progress_note"] = progress_note
+            updated.loc[i, "difficulty"] = difficulty
+            updated.loc[i, "energy_level"] = energy
+            updated.loc[i, "mood"] = mood
+            write_table("logs", updated, LOGS_COLUMNS)
+            clear_and_rerun("Log updated successfully.")
+
+    if st.button("Delete Selected Log", type="secondary", use_container_width=True):
+        updated = logs[logs["log_id"] != selected_log_id].copy()
+        write_table("logs", updated, LOGS_COLUMNS)
+        clear_and_rerun("Log deleted successfully.")
+
 def roadmap_section() -> None:
     st.subheader("🗺️ Roadmap Timeline")
     roadmap = pd.DataFrame([
@@ -1456,12 +1968,15 @@ def roadmap_section() -> None:
     st.dataframe(roadmap, use_container_width=True, hide_index=True)
 
 
-def export_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.DataFrame) -> None:
+def export_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.DataFrame, weekly_reflections: pd.DataFrame, monthly_reviews: pd.DataFrame) -> None:
     st.subheader("⬇️ Export")
     c1, c2, c3 = st.columns(3)
     c1.download_button("Download Goals CSV", goals.to_csv(index=False), file_name="goals.csv", mime="text/csv")
     c2.download_button("Download Logs CSV", logs.to_csv(index=False), file_name="logs.csv", mime="text/csv")
     c3.download_button("Download Milestones CSV", milestones.to_csv(index=False), file_name="milestones.csv", mime="text/csv")
+    c4, c5 = st.columns(2)
+    c4.download_button("Download Weekly Reflections CSV", weekly_reflections.to_csv(index=False), file_name="weekly_reflections.csv", mime="text/csv")
+    c5.download_button("Download Monthly Reviews CSV", monthly_reviews.to_csv(index=False), file_name="monthly_reviews.csv", mime="text/csv")
 
 
 # -----------------------------------------------------------------------------
@@ -1473,7 +1988,7 @@ def main() -> None:
 
     render_google_sheets_diagnostics()
 
-    goals, logs, milestones = load_data()
+    goals, logs, milestones, weekly_reflections, monthly_reviews = load_data()
     enriched = enrich_goals(goals, logs)
     filters = sidebar_filters(enriched)
     filtered_goals = apply_goal_filters(enriched, filters)
@@ -1491,6 +2006,8 @@ def main() -> None:
         "Goal Detail",
         "Diary",
         "Milestones",
+        "Weekly Review",
+        "Monthly Review",
         "Roadmap",
         "Export",
     ])
@@ -1504,8 +2021,12 @@ def main() -> None:
         quick_log_form(goals, logs, location="quick_tab")
         st.divider()
         log_progress_form(goals, logs)
+        st.divider()
+        edit_delete_log_section(goals, logs)
 
     with tabs[2]:
+        target_vs_actual_by_goal_section(enriched, logs)
+        st.divider()
         priority_vs_effort_chart(goals, logs, filters)
         overview_charts(goals, logs, filtered_goals, filters)
         goal_table_section(enriched, filtered_goals)
@@ -1527,10 +2048,16 @@ def main() -> None:
         milestone_form(goals, milestones)
 
     with tabs[7]:
-        roadmap_section()
+        weekly_reflection_section(goals, logs, weekly_reflections)
 
     with tabs[8]:
-        export_section(goals, logs, milestones)
+        monthly_review_section(goals, logs, weekly_reflections, monthly_reviews)
+
+    with tabs[9]:
+        roadmap_section()
+
+    with tabs[10]:
+        export_section(goals, logs, milestones, weekly_reflections, monthly_reviews)
 
 
 if __name__ == "__main__":
