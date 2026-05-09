@@ -1,7 +1,10 @@
 """
-Personal Goal Progress Dashboard — Version 2.2
+Personal Goal Progress Dashboard — Version 2.3
 ------------------------------------------------
 A Streamlit goal, habit, progress diary, and execution-score dashboard.
+
+Version 2.3 upgrades:
+- Show goal/habit descriptions in goal table, goal detail, quick log, and status management views
 
 Version 2.2 upgrades:
 - Rich executive metric snapshot with separated Goals and Habits
@@ -94,12 +97,13 @@ MOOD_OPTIONS = ["Poor", "Okay", "Good", "Great"]
 LEVERAGE_TYPE_OPTIONS = [
     "Build Asset",
     "Improve System",
-    "Learn Skill",
-    "Earn Money",
-    "Protect Health",
-    "Strategic Visibility",
-    "Reflection / Direction",
-    "Maintenance Only",
+    "Solve Operational Problem",
+    "Develop Capability",
+    "Create Strategic Visibility",
+    "Create Financial Leverage",
+    "Protect Health & Energy",
+    "Reflect & Reprioritize",
+    "Maintenance / Admin",
 ]
 
 EXECUTION_WEIGHTS = {
@@ -120,7 +124,13 @@ WEEKLY_TARGET_HOURS = {
     "Reflection": 0.5,
 }
 
-HIGH_LEVERAGE_TYPES = {"Build Asset", "Improve System", "Earn Money", "Strategic Visibility"}
+HIGH_LEVERAGE_TYPES = {
+    "Build Asset",
+    "Improve System",
+    "Solve Operational Problem",
+    "Create Strategic Visibility",
+    "Create Financial Leverage",
+}
 
 
 # -----------------------------------------------------------------------------
@@ -991,6 +1001,12 @@ def quick_log_form(goals: pd.DataFrame, logs: pd.DataFrame, location: str = "mai
     with st.form(form_key, clear_on_submit=True):
         c1, c2, c3 = st.columns([2.2, 0.8, 1.2])
         selected_label = c1.selectbox("Goal / habit", list(goal_options.keys()), key=f"quick_goal_{location}")
+        selected_goal_id = goal_options[selected_label]
+        selected_goal_row = goals[goals["goal_id"] == selected_goal_id]
+        if not selected_goal_row.empty:
+            description = str(selected_goal_row.iloc[0].get("description", "") or "").strip()
+            if description:
+                c1.caption(f"Purpose: {description}")
         hours_spent = c2.number_input("Hours", min_value=0.0, max_value=24.0, value=1.0, step=0.25, key=f"quick_hours_{location}")
         leverage_type = c3.selectbox("Leverage type", LEVERAGE_TYPE_OPTIONS, index=0, key=f"quick_lev_{location}")
         achievement = st.text_input("What did you achieve?", placeholder="Example: Added Google Sheets writeback and tested logging")
@@ -1050,6 +1066,12 @@ def log_progress_form(goals: pd.DataFrame, logs: pd.DataFrame) -> None:
     with st.form("log_progress_form", clear_on_submit=True):
         c1, c2 = st.columns([2, 1])
         selected_label = c1.selectbox("Goal / Habit", list(goal_options.keys()))
+        selected_goal_id = goal_options[selected_label]
+        selected_goal_row = goals[goals["goal_id"] == selected_goal_id]
+        if not selected_goal_row.empty:
+            description = str(selected_goal_row.iloc[0].get("description", "") or "").strip()
+            if description:
+                c1.caption(f"Purpose: {description}")
         log_date = c2.date_input("Log Date", value=date.today())
 
         c3, c4, c5 = st.columns(3)
@@ -1140,6 +1162,10 @@ def manage_goal_status(goals: pd.DataFrame) -> None:
     selected_label = st.selectbox("Select goal / habit to manage", list(goal_options.keys()), key="manage_goal_select")
     selected_id = goal_options[selected_label]
     row = goals[goals["goal_id"] == selected_id].iloc[0]
+
+    description = str(row.get("description", "") or "").strip()
+    if description:
+        st.markdown(f"<div class='section-card'><b>Description / Purpose</b><br>{description}</div>", unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1, 1, 1])
     current_status = str(row.get("status", "Active"))
@@ -1327,13 +1353,14 @@ def goal_table_section(enriched: pd.DataFrame, filtered_goals: pd.DataFrame) -> 
         return
 
     view_cols = [
-        "title", "type", "category", "status", "priority", "hours_this_week",
+        "title", "description", "type", "category", "status", "priority", "hours_this_week",
         "hours_this_month", "hours_all_time", "last_logged_date", "days_since_last_log",
         "total_logs", "progress_pct", "target_date",
     ]
     table = filtered_goals[view_cols].copy()
     table = table.rename(columns={
         "title": "Goal / Habit",
+        "description": "Description",
         "type": "Type",
         "category": "Category",
         "status": "Status",
@@ -1360,6 +1387,10 @@ def goal_detail_section(goals: pd.DataFrame, logs: pd.DataFrame, milestones: pd.
     selected_id = goal_options[selected_label]
     selected_goal = goals[goals["goal_id"] == selected_id].iloc[0]
     sub_logs = logs[logs["goal_id"] == selected_id].dropna(subset=["log_date"]).copy()
+
+    description = str(selected_goal.get("description", "") or "").strip()
+    if description:
+        st.markdown(f"<div class='section-card'><b>Description / Purpose</b><br>{description}</div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Hours", f"{sub_logs['hours_spent'].sum():.1f}" if not sub_logs.empty else "0.0")
